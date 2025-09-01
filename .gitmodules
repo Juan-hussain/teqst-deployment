@@ -1,0 +1,6 @@
+[submodule "TEQST_Backend"]
+	path = TEQST_Backend
+	url = https://github.com/Juan-hussain/TEQST_Backend.git
+[submodule "TEQST_Frontend"]
+	path = TEQST_Frontend
+	url = https://github.com/Juan-hussain/TEQST_Frontend.git
