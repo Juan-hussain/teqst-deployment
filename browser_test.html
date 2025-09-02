@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEQST Opus Implementation Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .pass { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .fail { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .recording-controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .format-selector {
+            margin: 20px 0;
+        }
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            margin: 0 10px;
+        }
+        .audio-info {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 TEQST Opus Implementation Test</h1>
+    
+    <div class="test-section">
+        <h2>🔍 Browser Compatibility Test</h2>
+        <div id="browser-tests"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>🎤 Audio Recording Test</h2>
+        <div class="format-selector">
+            <label for="format-select">Audio Format:</label>
+            <select id="format-select">
+                <option value="wav">WAV (Fallback)</option>
+                <option value="opus-low">Opus Low Quality (16kbps)</option>
+                <option value="opus-medium" selected>Opus Medium Quality (32kbps)</option>
+                <option value="opus-high">Opus High Quality (64kbps)</option>
+            </select>
+        </div>
+        
+        <div class="recording-controls">
+            <button id="start-btn" onclick="startRecording()">🎤 Start Recording</button>
+            <button id="stop-btn" onclick="stopRecording()" disabled>⏹️ Stop Recording</button>
+            <button id="play-btn" onclick="playRecording()" disabled>▶️ Play Recording</button>
+        </div>
+        
+        <div id="recording-status" class="audio-info">
+            Status: Ready to record
+        </div>
+        
+        <div id="recording-results"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>📊 Test Results Summary</h2>
+        <div id="test-summary"></div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let recordedBlob;
+        let currentFormat = 'opus-medium';
+        
+        // Test results
+        const testResults = {
+            browserSupport: false,
+            opusSupport: false,
+            recordingWorks: false,
+            playbackWorks: false
+        };
+        
+        // Initialize tests
+        window.onload = function() {
+            runBrowserTests();
+            setupFormatSelector();
+        };
+        
+        function runBrowserTests() {
+            const resultsDiv = document.getElementById('browser-tests');
+            let html = '';
+            
+            // Test basic browser support
+            const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            const hasMediaRecorder = !!window.MediaRecorder;
+            const isSecureContext = window.isSecureContext;
+            
+            html += `<div class="test-result ${hasGetUserMedia ? 'pass' : 'fail'}">
+                ${hasGetUserMedia ? '✅' : '❌'} getUserMedia API: ${hasGetUserMedia ? 'Supported' : 'Not supported'}
+            </div>`;
+            
+            html += `<div class="test-result ${hasMediaRecorder ? 'pass' : 'fail'}">
+                ${hasMediaRecorder ? '✅' : '❌'} MediaRecorder API: ${hasMediaRecorder ? 'Supported' : 'Not supported'}
+            </div>`;
+            
+            html += `<div class="test-result ${isSecureContext ? 'pass' : 'fail'}">
+                ${isSecureContext ? '✅' : '❌'} Secure Context: ${isSecureContext ? 'HTTPS/Localhost' : 'Not secure'}
+            </div>`;
+            
+            // Test Opus support
+            const opusSupported = MediaRecorder.isTypeSupported('audio/opus');
+            testResults.opusSupport = opusSupported;
+            
+            html += `<div class="test-result ${opusSupported ? 'pass' : 'fail'}">
+                ${opusSupported ? '✅' : '❌'} Opus Codec: ${opusSupported ? 'Supported' : 'Not supported (will use WAV fallback)'}
+            </div>`;
+            
+            // Test WAV support
+            const wavSupported = MediaRecorder.isTypeSupported('audio/wav');
+            html += `<div class="test-result ${wavSupported ? 'pass' : 'info'}">
+                ${wavSupported ? '✅' : '⚠️'} WAV Codec: ${wavSupported ? 'Supported' : 'Limited support'}
+            </div>`;
+            
+            testResults.browserSupport = hasGetUserMedia && hasMediaRecorder && isSecureContext;
+            
+            resultsDiv.innerHTML = html;
+            updateTestSummary();
+        }
+        
+        function setupFormatSelector() {
+            const formatSelect = document.getElementById('format-select');
+            formatSelect.addEventListener('change', function() {
+                currentFormat = this.value;
+                updateRecordingStatus(`Format changed to: ${this.options[this.selectedIndex].text}`);
+            });
+        }
+        
+        async function startRecording() {
+            try {
+                updateRecordingStatus('Requesting microphone access...');
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                updateRecordingStatus('Microphone access granted. Starting recording...');
+                
+                // Determine MIME type based on format
+                let mimeType = 'audio/webm'; // Default fallback
+                if (currentFormat.startsWith('opus') && MediaRecorder.isTypeSupported('audio/opus')) {
+                    mimeType = 'audio/opus';
+                } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    mimeType = 'audio/webm';
+                }
+                
+                const options = { mimeType: mimeType };
+                
+                // Add bitrate if supported
+                if (currentFormat.includes('low')) {
+                    options.audioBitsPerSecond = 16000;
+                } else if (currentFormat.includes('medium')) {
+                    options.audioBitsPerSecond = 32000;
+                } else if (currentFormat.includes('high')) {
+                    options.audioBitsPerSecond = 64000;
+                }
+                
+                mediaRecorder = new MediaRecorder(stream, options);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = function(event) {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = function() {
+                    recordedBlob = new Blob(audioChunks, { type: mimeType });
+                    const sizeKB = (recordedBlob.size / 1024).toFixed(2);
+                    updateRecordingStatus(`Recording completed! Size: ${sizeKB} KB`);
+                    
+                    document.getElementById('play-btn').disabled = false;
+                    testResults.recordingWorks = true;
+                    updateTestSummary();
+                    
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                updateRecordingStatus('🔴 Recording... Click Stop when done');
+                
+                document.getElementById('start-btn').disabled = true;
+                document.getElementById('stop-btn').disabled = false;
+                
+            } catch (error) {
+                updateRecordingStatus(`❌ Error: ${error.message}`);
+                console.error('Recording error:', error);
+            }
+        }
+        
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                document.getElementById('start-btn').disabled = false;
+                document.getElementById('stop-btn').disabled = true;
+            }
+        }
+        
+        function playRecording() {
+            if (recordedBlob) {
+                const audio = new Audio();
+                audio.src = URL.createObjectURL(recordedBlob);
+                
+                audio.onplay = function() {
+                    updateRecordingStatus('▶️ Playing recording...');
+                    testResults.playbackWorks = true;
+                    updateTestSummary();
+                };
+                
+                audio.onended = function() {
+                    updateRecordingStatus('⏹️ Playback finished');
+                };
+                
+                audio.onerror = function() {
+                    updateRecordingStatus('❌ Playback error');
+                };
+                
+                audio.play().catch(error => {
+                    updateRecordingStatus(`❌ Playback failed: ${error.message}`);
+                });
+            }
+        }
+        
+        function updateRecordingStatus(message) {
+            document.getElementById('recording-status').innerHTML = `Status: ${message}`;
+        }
+        
+        function updateTestSummary() {
+            const summaryDiv = document.getElementById('test-summary');
+            const passed = Object.values(testResults).filter(Boolean).length;
+            const total = Object.keys(testResults).length;
+            
+            let html = `<div class="test-result ${passed === total ? 'pass' : 'fail'}">
+                <strong>Overall Result: ${passed}/${total} tests passed</strong>
+            </div>`;
+            
+            html += `<div class="test-result ${testResults.browserSupport ? 'pass' : 'fail'}">
+                ${testResults.browserSupport ? '✅' : '❌'} Browser Support
+            </div>`;
+            
+            html += `<div class="test-result ${testResults.opusSupport ? 'pass' : 'info'}">
+                ${testResults.opusSupport ? '✅' : '⚠️'} Opus Support
+            </div>`;
+            
+            html += `<div class="test-result ${testResults.recordingWorks ? 'pass' : 'fail'}">
+                ${testResults.recordingWorks ? '✅' : '❌'} Recording Works
+            </div>`;
+            
+            html += `<div class="test-result ${testResults.playbackWorks ? 'pass' : 'fail'}">
+                ${testResults.playbackWorks ? '✅' : '❌'} Playback Works
+            </div>`;
+            
+            if (passed === total) {
+                html += `<div class="test-result pass">
+                    🎉 All tests passed! Opus implementation is working correctly.
+                </div>`;
+            } else {
+                html += `<div class="test-result fail">
+                    ⚠️ Some tests failed. Check the issues above.
+                </div>`;
+            }
+            
+            summaryDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
+
